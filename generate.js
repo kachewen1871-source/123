@@ -1,11 +1,11 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 export const config = {
   maxDuration: 60,
 };
 
 export default async function handler(req, res) {
-  // Set CORS headers to allow requests from any origin (or strict it to your domain)
+  // Set CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -14,7 +14,6 @@ export default async function handler(req, res) {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
 
-  // Handle OPTIONS request for preflight
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
@@ -29,8 +28,8 @@ export default async function handler(req, res) {
     const apiKey = process.env.API_KEY;
 
     if (!apiKey) {
-      console.error("API Key is missing");
-      return res.status(500).json({ error: 'Server Config Error: API Key Missing' });
+      console.error("API Key is missing in environment variables");
+      return res.status(500).json({ error: 'Server Config Error: API Key Missing. Please add API_KEY to Vercel Environment Variables.' });
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -50,50 +49,50 @@ export default async function handler(req, res) {
       `;
 
     const responseSchema = {
-        type: 'OBJECT',
+        type: Type.OBJECT,
         properties: {
           bazi: {
-            type: 'OBJECT',
+            type: Type.OBJECT,
             properties: {
-              year: { type: 'STRING' },
-              month: { type: 'STRING' },
-              day: { type: 'STRING' },
-              hour: { type: 'STRING' },
+              year: { type: Type.STRING },
+              month: { type: Type.STRING },
+              day: { type: Type.STRING },
+              hour: { type: Type.STRING },
             },
             required: ["year", "month", "day", "hour"],
           },
           profile: {
-            type: 'OBJECT',
+            type: Type.OBJECT,
             properties: {
-              wuxing: { type: 'STRING', description: "五行属性 (金木水火土)" },
-              archetype: { type: 'STRING', description: "五行意象/人设名称 (如：长流水)" },
-              keywords: { type: 'STRING', description: "2-3个性格关键词" },
-              luckyColor: { type: 'STRING', description: "幸运颜色" },
-              luckyNumber: { type: 'STRING', description: "幸运数字" },
-              luckyDirection: { type: 'STRING', description: "幸运方位" },
-              advice: { type: 'STRING', description: "一句话开运建议" },
+              wuxing: { type: Type.STRING, description: "五行属性 (金木水火土)" },
+              archetype: { type: Type.STRING, description: "五行意象/人设名称 (如：长流水)" },
+              keywords: { type: Type.STRING, description: "2-3个性格关键词" },
+              luckyColor: { type: Type.STRING, description: "幸运颜色" },
+              luckyNumber: { type: Type.STRING, description: "幸运数字" },
+              luckyDirection: { type: Type.STRING, description: "幸运方位" },
+              advice: { type: Type.STRING, description: "一句话开运建议" },
             },
             required: ["wuxing", "archetype", "keywords", "luckyColor", "luckyNumber", "luckyDirection", "advice"],
           },
           recommendations: {
-            type: 'ARRAY',
+            type: Type.ARRAY,
             items: {
-              type: 'OBJECT',
+              type: Type.OBJECT,
               properties: {
-                city: { type: 'STRING' },
-                province: { type: 'STRING' },
-                tags: { type: 'ARRAY', items: { type: 'STRING' } },
-                reason: { type: 'STRING', description: "简短推荐理由" },
-                score: { type: 'NUMBER' },
-                distance: { type: 'NUMBER' },
+                city: { type: Type.STRING },
+                province: { type: Type.STRING },
+                tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                reason: { type: Type.STRING, description: "简短推荐理由" },
+                score: { type: Type.NUMBER },
+                distance: { type: Type.NUMBER },
                 dimensions: {
-                  type: 'OBJECT',
+                  type: Type.OBJECT,
                   properties: {
-                    career: { type: 'NUMBER' },
-                    wealth: { type: 'NUMBER' },
-                    relationship: { type: 'NUMBER' },
-                    health: { type: 'NUMBER' },
-                    environment: { type: 'NUMBER' },
+                    career: { type: Type.NUMBER },
+                    wealth: { type: Type.NUMBER },
+                    relationship: { type: Type.NUMBER },
+                    health: { type: Type.NUMBER },
+                    environment: { type: Type.NUMBER },
                   },
                   required: ["career", "wealth", "relationship", "health", "environment"]
                 }
@@ -114,7 +113,6 @@ export default async function handler(req, res) {
       },
     });
 
-    // Handle potential raw text that might contain markdown block
     let jsonString = response.text;
     if (jsonString.startsWith("```json")) {
         jsonString = jsonString.replace(/^```json\n/, "").replace(/\n```$/, "");
@@ -124,7 +122,6 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("API Error:", error);
-    // Return explicit JSON error so frontend displays the error message instead of failing to parse
-    return res.status(500).json({ error: "服务器正忙，请稍后重试 (" + (error.message || "Unknown") + ")" });
+    return res.status(500).json({ error: "服务器正忙，请稍后重试" });
   }
 }
