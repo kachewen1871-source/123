@@ -1,55 +1,61 @@
 
 export const config = {
-  runtime: 'edge', // 切换到 Edge Runtime，更稳定且原生支持 fetch
+  maxDuration: 60, // 设置超时时间为 60秒
+  // 移除 runtime: 'edge'，使用默认的 Node.js 运行时，兼容性更好
 };
 
-export default async function handler(request) {
-  // --- CORS Headers ---
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Api-Version',
-  };
+export default async function handler(req, res) {
+  // --- CORS Setup ---
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
 
-  // 处理预检请求 (OPTIONS)
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 200, headers: corsHeaders });
+  // 处理预检请求
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
   }
 
   // 只允许 POST
-  if (request.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
-    // 解析请求体 (Edge Runtime 使用 request.json())
-    const body = await request.json();
-    const { birthDate, birthTime, birthPlace } = body;
-    console.log("Processing request for:", birthPlace);
+    // Node.js 模式下，req.body 会自动被 Vercel 解析 (如果 Content-Type 是 application/json)
+    const { birthDate, birthTime, birthPlace } = req.body || {};
+
+    if (!birthPlace) {
+       console.error("Missing birthPlace in body:", req.body);
+       return res.status(400).json({ error: "缺少必要的参数" });
+    }
+
+    console.log(`Processing request for: ${birthPlace}`);
 
     // --- Configuration ---
     const apiKey = process.env.API_KEY;
     let apiBaseUrl = process.env.API_BASE_URL;
 
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: '配置错误: 缺少 API_KEY' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      console.error("Missing API_KEY env var");
+      return res.status(500).json({ 
+        error: '配置错误: 服务器缺少 API_KEY' 
       });
     }
 
-    // 处理 Base URL
+    // 默认回退地址
     if (!apiBaseUrl) {
-      apiBaseUrl = "https://api.openai.com/v1";
+        apiBaseUrl = "https://api.openai.com/v1";
     }
-    // 移除末尾斜杠
-    apiBaseUrl = apiBaseUrl.replace(/\/$/, "");
-    // 智能补全 /v1
+
+    // URL 清理逻辑
+    apiBaseUrl = apiBaseUrl.replace(/\/$/, ""); // 去掉末尾斜杠
     if (!apiBaseUrl.endsWith("/v1")) {
-      apiBaseUrl = `${apiBaseUrl}/v1`;
+        apiBaseUrl = `${apiBaseUrl}/v1`;
     }
 
     const systemPrompt = `
@@ -106,7 +112,7 @@ export default async function handler(request) {
       temperature: 0.7
     };
 
-    console.log(`Sending request to: ${apiBaseUrl}/chat/completions`);
+    console.log(`Sending request to Provider: ${apiBaseUrl}/chat/completions`);
 
     const apiResponse = await fetch(`${apiBaseUrl}/chat/completions`, {
       method: "POST",
@@ -119,45 +125,38 @@ export default async function handler(request) {
 
     if (!apiResponse.ok) {
       const errorText = await apiResponse.text();
-      console.error("Provider Error:", errorText);
-      return new Response(JSON.stringify({ 
-        error: `服务商请求失败 (${apiResponse.status})。请检查 API_BASE_URL 和 Key。` 
-      }), {
-        status: 502,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      console.error("Provider Error Status:", apiResponse.status);
+      console.error("Provider Error Body:", errorText);
+      
+      // 返回具体的错误给前端，方便调试
+      return res.status(502).json({ 
+        error: `上游服务报错 (${apiResponse.status}): ${errorText.substring(0, 100)}...` 
       });
     }
 
     const data = await apiResponse.json();
-
+    
+    // 检查数据结构
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-       return new Response(JSON.stringify({ error: "服务商返回数据格式异常" }), {
-        status: 502,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+        console.error("Invalid Data Structure:", JSON.stringify(data));
+        return res.status(502).json({ error: "上游服务返回的数据格式异常" });
     }
 
     let content = data.choices[0].message.content;
+    // 清理可能存在的 Markdown 标记
     content = content.replace(/```json/g, "").replace(/```/g, "").trim();
 
     try {
-      const result = JSON.parse(content);
-      return new Response(JSON.stringify(result), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+        const result = JSON.parse(content);
+        return res.status(200).json(result);
     } catch (parseError) {
-      return new Response(JSON.stringify({ error: "AI 生成的数据无法解析为 JSON" }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+        console.error("JSON Parse Error:", parseError);
+        console.error("Raw Content:", content);
+        return res.status(500).json({ error: "AI 生成的内容无法解析为 JSON" });
     }
 
   } catch (error) {
-    console.error("Edge Handler Error:", error);
-    return new Response(JSON.stringify({ error: error.message || "服务器内部错误" }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error("Handler Fatal Error:", error);
+    return res.status(500).json({ error: error.message || "服务器内部未知错误" });
   }
 }
