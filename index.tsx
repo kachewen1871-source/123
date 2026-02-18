@@ -237,7 +237,7 @@ const IOSDatePicker = ({
   const currentYear = new Date().getFullYear();
   
   // States
-  const [year, setYear] = useState(1990);
+  const [year, setYear] = useState(2000);
   const [month, setMonth] = useState(1);
   const [day, setDay] = useState(1);
   const [hour, setHour] = useState(12);
