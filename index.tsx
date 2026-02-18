@@ -198,7 +198,7 @@ const PickerColumn: React.FC<PickerColumnProps> = ({ items, value, onChange, lab
   };
 
   return (
-    <div className={`relative h-[140px] w-full max-w-[140px] text-center overflow-hidden flex-1 ${className}`}>
+    <div className={`relative h-[140px] text-center overflow-hidden flex-1 min-w-0 ${className}`}>
       {/* Selection Highlight - Top at 50px (Center 70 - 20) */}
       <div className="absolute top-[50px] left-0 right-0 h-[40px] border-t border-b border-red-800/30 z-10 pointer-events-none bg-red-50/10"></div>
       
@@ -212,8 +212,8 @@ const PickerColumn: React.FC<PickerColumnProps> = ({ items, value, onChange, lab
         {items.map((item) => (
           <li
             key={item}
-            className={`h-[40px] flex items-center justify-center snap-center text-base transition-all duration-200 cursor-pointer select-none truncate px-1
-              ${item === value ? "text-red-900 font-bold scale-110" : "text-gray-400 scale-100"}`}
+            className={`h-[40px] flex items-center justify-center snap-center text-base transition-all duration-200 cursor-pointer select-none truncate px-1 tabular-nums
+              ${item === value ? "text-red-900 font-semibold scale-110" : "text-gray-400 scale-100"}`}
             onClick={() => {
                 onChange(item);
                 const idx = items.indexOf(item);
@@ -331,13 +331,13 @@ const CityPicker = ({
                 items={PROVINCES} 
                 value={province} 
                 onChange={(v) => setProvince(String(v))} 
-                className="min-w-[40%]"
+                className="flex-1"
             />
             <PickerColumn 
                 items={currentCities} 
                 value={city} 
                 onChange={(v) => setCity(String(v))} 
-                className="min-w-[40%]"
+                className="flex-1"
             />
         </div>
     </div>
@@ -746,16 +746,16 @@ const RecommendationCard: React.FC<{
     <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-red-50 to-transparent rounded-bl-full -z-0"></div>
     
     <div className="flex items-start justify-between relative z-10">
-      <div className="flex-1">
+      <div className="flex-1 min-w-0"> {/* Added min-w-0 for flex truncation */}
          <div className="flex items-center gap-2 mb-1">
-             <h3 className="text-xl font-bold text-gray-800">{rec.city}</h3>
-             <span className="text-xs text-gray-400 font-light">{rec.province}</span>
+             <h3 className="text-xl font-bold text-gray-800 truncate">{rec.city}</h3>
+             <span className="text-xs text-gray-400 font-light truncate">{rec.province}</span>
          </div>
          
          {/* Tags */}
          <div className="flex flex-wrap gap-1 mb-2">
              {rec.tags.map((tag, i) => (
-                 <span key={i} className="px-1.5 py-0.5 bg-orange-50 text-orange-700 text-[10px] rounded-md border border-orange-100">
+                 <span key={i} className="px-1.5 py-0.5 bg-orange-50 text-orange-700 text-[10px] rounded-md border border-orange-100 whitespace-nowrap">
                      {tag}
                  </span>
              ))}
@@ -942,7 +942,7 @@ const App = () => {
           await new Promise(resolve => setTimeout(resolve, 2000));
           setResult(DEMO_RESULT);
           setView('result');
-          setToast({ show: true, message: "⚠️ 本地开发模式：显示演示数据" });
+          setToast({ show: true, message: "⚠️ 演示模式 (API未连接)" }); // Changed message to be clearer
           return;
       }
 
