@@ -125,11 +125,10 @@ const DEMO_RESULT: BaziResult = {
 
 // --- Configuration ---
 
-// 配置你的购买链接 (小红书主页链接、置顶笔记链接，或发卡平台链接)
+// 配置你的购买链接
 const BUY_LINK = "https://www.xiaohongshu.com"; 
 
 // 配置 Base64 编码的解锁码 (固定码模式)
-// 这里默认是 '8888' 的 Base64 编码 (ODg4OA==)
 const VALID_CODES_HASHES = [
     'ODg4OA==', // 对应明文: 8888
 ];
@@ -199,7 +198,7 @@ const PickerColumn: React.FC<PickerColumnProps> = ({ items, value, onChange, lab
 
   return (
     <div className={`relative h-[140px] text-center overflow-hidden flex-1 min-w-0 ${className}`}>
-      {/* Selection Highlight - Top at 50px (Center 70 - 20) */}
+      {/* Selection Highlight */}
       <div className="absolute top-[50px] left-0 right-0 h-[40px] border-t border-b border-red-800/30 z-10 pointer-events-none bg-red-50/10"></div>
       
       {/* Scroll Container */}
@@ -207,13 +206,14 @@ const PickerColumn: React.FC<PickerColumnProps> = ({ items, value, onChange, lab
         ref={scrollRef}
         onScroll={handleScroll}
         className="h-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide py-[50px]"
-        style={{ scrollBehavior: 'auto' }} // auto for drag, custom smooth for programmatic
+        style={{ scrollBehavior: 'auto' }}
       >
         {items.map((item) => (
           <li
             key={item}
-            className={`h-[40px] flex items-center justify-center snap-center text-base transition-all duration-200 cursor-pointer select-none truncate px-1 tabular-nums
-              ${item === value ? "text-red-900 font-semibold scale-110" : "text-gray-400 scale-100"}`}
+            // FIX: Removed font-semibold and scale to prevent shaking. Added justify-center explicit width.
+            className={`h-[40px] flex items-center justify-center snap-center text-base transition-colors duration-200 cursor-pointer select-none truncate px-1 tabular-nums font-medium
+              ${item === value ? "text-red-900" : "text-gray-400"}`}
             onClick={() => {
                 onChange(item);
                 const idx = items.indexOf(item);
@@ -810,7 +810,7 @@ const LoadingView = ({error, onErrorClose}: {error: string | null, onErrorClose:
                     <div className="w-12 h-12 bg-red-100 text-red-800 rounded-full flex items-center justify-center mx-auto mb-4">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                     </div>
-                    <h3 className="text-lg font-bold text-gray-800 mb-2">推算中断</h3>
+                    <h3 className="text-lg font-bold text-gray-800 mb-2">服务暂不可用</h3>
                     <p className="text-sm text-gray-500 mb-4">{error}</p>
                     <button onClick={onErrorClose} className="w-full bg-red-900 text-white py-2 rounded-lg text-sm font-bold hover:bg-red-950">
                         返回重试
@@ -934,16 +934,22 @@ const App = () => {
         body: JSON.stringify(formData),
       });
 
-      // Check if response is HTML (common in local Vite dev when API doesn't exist)
+      // Check if response is HTML (common in local Vite dev when API doesn't exist, or 500 error pages on Vercel)
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") === -1) {
-          console.warn("API returned non-JSON content. Likely running in local Vite dev mode without backend. Falling back to Demo Data.");
-          // Simulate network delay
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          setResult(DEMO_RESULT);
-          setView('result');
-          setToast({ show: true, message: "⚠️ 演示模式 (API未连接)" }); // Changed message to be clearer
-          return;
+          const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          
+          if (isLocalhost) {
+              console.warn("Local Dev Mode: Falling back to Demo Data.");
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              setResult(DEMO_RESULT);
+              setView('result');
+              setToast({ show: true, message: "⚠️ 本地演示模式" });
+              return;
+          } else {
+             // Production Environment: Do NOT show fake data. Throw error.
+             throw new Error("后端服务配置错误 (API returned HTML). 请检查 Vercel 的 API Key 设置。");
+          }
       }
 
       if (!response.ok) {
