@@ -1,62 +1,64 @@
 
 export const config = {
-  maxDuration: 60, // 设置超时时间为 60秒
-  // 移除 runtime: 'edge'，使用默认的 Node.js 运行时，兼容性更好
+  runtime: 'nodejs', // 明确指定使用 Node.js 运行时 (比 Edge 更稳定，兼容性更好)
+  maxDuration: 60,   // 设置超时时间
 };
 
-export default async function handler(req, res) {
-  // --- CORS Setup ---
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+// 在 "type": "module" 模式下，Vercel 期望默认导出是一个接收 Request 对象并返回 Response 对象的函数
+export default async function handler(request) {
+  // --- 1. 处理 CORS (Web API 方式) ---
+  const corsHeaders = {
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,OPTIONS,PATCH,DELETE,POST,PUT',
+    'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  };
 
-  // 处理预检请求
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+  // 处理预检请求 (OPTIONS)
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   // 只允许 POST
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+      status: 405, 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   }
 
   try {
-    // Node.js 模式下，req.body 会自动被 Vercel 解析 (如果 Content-Type 是 application/json)
-    const { birthDate, birthTime, birthPlace } = req.body || {};
-
-    if (!birthPlace) {
-       console.error("Missing birthPlace in body:", req.body);
-       return res.status(400).json({ error: "缺少必要的参数" });
-    }
+    // --- 2. 解析请求体 (Web API 方式) ---
+    // 必须使用 await request.json() 而不是 req.body
+    const body = await request.json().catch(() => ({})); 
+    const { birthDate, birthTime, birthPlace } = body;
 
     console.log(`Processing request for: ${birthPlace}`);
 
-    // --- Configuration ---
+    if (!birthPlace) {
+       return new Response(JSON.stringify({ error: "缺少必要的参数: birthPlace" }), {
+         status: 400,
+         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+       });
+    }
+
+    // --- 3. 配置检查 ---
     const apiKey = process.env.API_KEY;
     let apiBaseUrl = process.env.API_BASE_URL;
 
     if (!apiKey) {
-      console.error("Missing API_KEY env var");
-      return res.status(500).json({ 
-        error: '配置错误: 服务器缺少 API_KEY' 
+      console.error("Server Error: Missing API_KEY");
+      return new Response(JSON.stringify({ error: '配置错误: 服务器缺少 API_KEY' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     // 默认回退地址
-    if (!apiBaseUrl) {
-        apiBaseUrl = "https://api.openai.com/v1";
-    }
-
-    // URL 清理逻辑
-    apiBaseUrl = apiBaseUrl.replace(/\/$/, ""); // 去掉末尾斜杠
-    if (!apiBaseUrl.endsWith("/v1")) {
-        apiBaseUrl = `${apiBaseUrl}/v1`;
-    }
+    if (!apiBaseUrl) apiBaseUrl = "https://api.openai.com/v1";
+    // URL 清理
+    apiBaseUrl = apiBaseUrl.replace(/\/$/, "");
+    if (!apiBaseUrl.endsWith("/v1")) apiBaseUrl = `${apiBaseUrl}/v1`;
 
     const systemPrompt = `
     你是一个精通《三命通会》与《穷通宝鉴》的玄学大师，同时也是一位熟悉中国城市地理的数据分析师。
@@ -101,7 +103,7 @@ export default async function handler(req, res) {
     }
     `;
 
-    // --- External API Call ---
+    // --- 4. 调用外部 API ---
     const payload = {
       model: "gemini-1.5-pro", 
       messages: [
@@ -112,7 +114,7 @@ export default async function handler(req, res) {
       temperature: 0.7
     };
 
-    console.log(`Sending request to Provider: ${apiBaseUrl}/chat/completions`);
+    console.log(`Sending request to: ${apiBaseUrl}/chat/completions`);
 
     const apiResponse = await fetch(`${apiBaseUrl}/chat/completions`, {
       method: "POST",
@@ -125,12 +127,13 @@ export default async function handler(req, res) {
 
     if (!apiResponse.ok) {
       const errorText = await apiResponse.text();
-      console.error("Provider Error Status:", apiResponse.status);
-      console.error("Provider Error Body:", errorText);
+      console.error(`Provider Error (${apiResponse.status}):`, errorText);
       
-      // 返回具体的错误给前端，方便调试
-      return res.status(502).json({ 
-        error: `上游服务报错 (${apiResponse.status}): ${errorText.substring(0, 100)}...` 
+      return new Response(JSON.stringify({ 
+        error: `上游服务报错 (${apiResponse.status})。请检查 Key 或 URL。` 
+      }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -138,25 +141,34 @@ export default async function handler(req, res) {
     
     // 检查数据结构
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        console.error("Invalid Data Structure:", JSON.stringify(data));
-        return res.status(502).json({ error: "上游服务返回的数据格式异常" });
+        return new Response(JSON.stringify({ error: "上游服务返回的数据格式异常" }), {
+            status: 502,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
     }
 
     let content = data.choices[0].message.content;
-    // 清理可能存在的 Markdown 标记
     content = content.replace(/```json/g, "").replace(/```/g, "").trim();
 
     try {
         const result = JSON.parse(content);
-        return res.status(200).json(result);
+        return new Response(JSON.stringify(result), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
     } catch (parseError) {
         console.error("JSON Parse Error:", parseError);
-        console.error("Raw Content:", content);
-        return res.status(500).json({ error: "AI 生成的内容无法解析为 JSON" });
+        return new Response(JSON.stringify({ error: "AI 生成内容无法解析为 JSON" }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
     }
 
   } catch (error) {
     console.error("Handler Fatal Error:", error);
-    return res.status(500).json({ error: error.message || "服务器内部未知错误" });
+    return new Response(JSON.stringify({ error: error.message || "服务器内部未知错误" }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   }
 }
