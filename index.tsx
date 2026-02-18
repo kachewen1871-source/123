@@ -211,8 +211,8 @@ const PickerColumn: React.FC<PickerColumnProps> = ({ items, value, onChange, lab
         {items.map((item) => (
           <li
             key={item}
-            // FIX: Removed font-semibold and scale to prevent shaking. Added justify-center explicit width.
-            className={`h-[40px] flex items-center justify-center snap-center text-base transition-colors duration-200 cursor-pointer select-none truncate px-1 tabular-nums font-medium
+            // FIX: Added 'font-sans' to use system font numbers (monospaced/tabular friendly) instead of Serif
+            className={`h-[40px] flex items-center justify-center snap-center text-base transition-colors duration-200 cursor-pointer select-none truncate px-1 tabular-nums font-medium font-sans
               ${item === value ? "text-red-900" : "text-gray-400"}`}
             onClick={() => {
                 onChange(item);
@@ -221,7 +221,7 @@ const PickerColumn: React.FC<PickerColumnProps> = ({ items, value, onChange, lab
             }}
           >
             {item}
-            {label && <span className="text-[10px] ml-0.5 font-normal opacity-50">{label}</span>}
+            {label && <span className="text-[10px] ml-0.5 font-normal opacity-50 font-serif">{label}</span>}
           </li>
         ))}
       </ul>
