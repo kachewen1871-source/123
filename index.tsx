@@ -782,10 +782,12 @@ const RecommendationCard: React.FC<{
   </div>
 );
 
-const LoadingView = () => {
+const LoadingView = ({error, onErrorClose}: {error: string | null, onErrorClose: () => void}) => {
     const [text, setText] = useState("正在推算天干地支...");
     
     useEffect(() => {
+        if (error) return; // Stop text rotation on error
+
         const texts = [
             "正在连接命理数据库...",
             "正在分析你的五行特质...",
@@ -799,15 +801,30 @@ const LoadingView = () => {
             setText(texts[i]);
         }, 1500);
         return () => clearInterval(interval);
-    }, []);
+    }, [error]);
 
     return (
         <div className="fixed inset-0 bg-paper z-50 flex flex-col items-center justify-center p-8 text-center animate-fadeIn">
-            <div className="relative mb-8">
-                <div className="w-16 h-16 border-4 border-stone-200 rounded-full animate-spin"></div>
-                <div className="absolute top-0 left-0 w-16 h-16 border-4 border-t-red-800 rounded-full animate-spin"></div>
-            </div>
-            <h2 className="text-lg font-bold text-gray-800 mb-2 font-serif">{text}</h2>
+            {error ? (
+                <div className="max-w-xs bg-white p-6 rounded-xl shadow-xl border border-red-100">
+                    <div className="w-12 h-12 bg-red-100 text-red-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-800 mb-2">推算中断</h3>
+                    <p className="text-sm text-gray-500 mb-4">{error}</p>
+                    <button onClick={onErrorClose} className="w-full bg-red-900 text-white py-2 rounded-lg text-sm font-bold hover:bg-red-950">
+                        返回重试
+                    </button>
+                </div>
+            ) : (
+                <>
+                    <div className="relative mb-8">
+                        <div className="w-16 h-16 border-4 border-stone-200 rounded-full animate-spin"></div>
+                        <div className="absolute top-0 left-0 w-16 h-16 border-4 border-t-red-800 rounded-full animate-spin"></div>
+                    </div>
+                    <h2 className="text-lg font-bold text-gray-800 mb-2 font-serif">{text}</h2>
+                </>
+            )}
         </div>
     );
 }
@@ -917,6 +934,18 @@ const App = () => {
         body: JSON.stringify(formData),
       });
 
+      // Check if response is HTML (common in local Vite dev when API doesn't exist)
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") === -1) {
+          console.warn("API returned non-JSON content. Likely running in local Vite dev mode without backend. Falling back to Demo Data.");
+          // Simulate network delay
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          setResult(DEMO_RESULT);
+          setView('result');
+          setToast({ show: true, message: "⚠️ 本地开发模式：显示演示数据" });
+          return;
+      }
+
       if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || "请求失败，请稍后重试");
@@ -932,16 +961,16 @@ const App = () => {
       setView('result');
 
     } catch (err: any) {
+      console.error(err);
       setError(err.message || "推算过程中发生了错误，请稍后再试。");
-      setView('input');
-      setToast({ show: true, message: err.message || "服务繁忙，请重试" });
+      // Do NOT reset view to input immediately, let user see the error in LoadingView
     }
   };
 
   // --- Render Views ---
 
   if (view === 'calculating') {
-      return <LoadingView />;
+      return <LoadingView error={error} onErrorClose={() => setView('input')} />;
   }
 
   if (view === 'result' && result) {
