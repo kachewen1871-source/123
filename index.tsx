@@ -198,21 +198,21 @@ const PickerColumn: React.FC<PickerColumnProps> = ({ items, value, onChange, lab
   };
 
   return (
-    <div className={`relative h-[200px] w-full max-w-[140px] text-center overflow-hidden flex-1 ${className}`}>
-      {/* Selection Highlight */}
-      <div className="absolute top-[80px] left-0 right-0 h-[40px] border-t border-b border-red-800/30 z-10 pointer-events-none bg-red-50/10"></div>
+    <div className={`relative h-[140px] w-full max-w-[140px] text-center overflow-hidden flex-1 ${className}`}>
+      {/* Selection Highlight - Top at 50px (Center 70 - 20) */}
+      <div className="absolute top-[50px] left-0 right-0 h-[40px] border-t border-b border-red-800/30 z-10 pointer-events-none bg-red-50/10"></div>
       
       {/* Scroll Container */}
       <ul
         ref={scrollRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide py-[80px]"
+        className="h-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide py-[50px]"
         style={{ scrollBehavior: 'auto' }} // auto for drag, custom smooth for programmatic
       >
         {items.map((item) => (
           <li
             key={item}
-            className={`h-[40px] flex items-center justify-center snap-center text-lg transition-all duration-200 cursor-pointer select-none truncate px-2
+            className={`h-[40px] flex items-center justify-center snap-center text-base transition-all duration-200 cursor-pointer select-none truncate px-1
               ${item === value ? "text-red-900 font-bold scale-110" : "text-gray-400 scale-100"}`}
             onClick={() => {
                 onChange(item);
@@ -221,7 +221,7 @@ const PickerColumn: React.FC<PickerColumnProps> = ({ items, value, onChange, lab
             }}
           >
             {item}
-            {label && <span className="text-xs ml-0.5 font-normal opacity-50">{label}</span>}
+            {label && <span className="text-[10px] ml-0.5 font-normal opacity-50">{label}</span>}
           </li>
         ))}
       </ul>
@@ -278,17 +278,17 @@ const IOSDatePicker = ({
 
   return (
     <div className="bg-white/40 backdrop-blur-sm rounded-xl border border-stone-200 overflow-hidden shadow-inner w-full">
-        <div className="flex justify-center items-center relative px-0 md:px-8 py-2">
+        <div className="flex justify-center items-center relative px-0 md:px-4 py-0">
             {/* Gradient Masks for 3D effect */}
-            <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-white via-white/80 to-transparent z-20 pointer-events-none"></div>
-            <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white via-white/80 to-transparent z-20 pointer-events-none"></div>
+            <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-white via-white/80 to-transparent z-20 pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white via-white/80 to-transparent z-20 pointer-events-none"></div>
 
             <PickerColumn items={years} value={year} onChange={(v) => setYear(Number(v))} label="年" />
             <PickerColumn items={months} value={month} onChange={(v) => setMonth(Number(v))} label="月" />
             <PickerColumn items={days} value={day} onChange={(v) => setDay(Number(v))} label="日" />
             
             {/* Divider - Hidden on small mobile to save space, shown on larger */}
-            <div className="w-px h-[100px] bg-gray-300 mx-1 hidden sm:block"></div>
+            <div className="w-px h-[60px] bg-gray-300 mx-0.5 hidden sm:block"></div>
             
             <PickerColumn items={hours} value={hour} onChange={(v) => setHour(Number(v))} label="时" />
             <PickerColumn items={minutes} value={minute} onChange={(v) => setMinute(Number(v))} label="分" />
@@ -322,10 +322,10 @@ const CityPicker = ({
 
   return (
     <div className="bg-white/40 backdrop-blur-sm rounded-xl border border-stone-200 overflow-hidden shadow-inner w-full">
-        <div className="flex justify-center items-center relative px-2 md:px-8 py-2">
+        <div className="flex justify-center items-center relative px-2 md:px-4 py-0">
             {/* Gradient Masks */}
-            <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-white via-white/80 to-transparent z-20 pointer-events-none"></div>
-            <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white via-white/80 to-transparent z-20 pointer-events-none"></div>
+            <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-white via-white/80 to-transparent z-20 pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white via-white/80 to-transparent z-20 pointer-events-none"></div>
 
             <PickerColumn 
                 items={PROVINCES} 
@@ -539,12 +539,12 @@ const SharePoster = React.forwardRef<HTMLDivElement, { result: BaziResult }>(({ 
 // --- Main Components ---
 
 const Header = ({ compact = false }: { compact?: boolean }) => (
-  <header className={`text-center transition-all duration-300 ${compact ? 'py-3 px-4 border-b border-stone-200 bg-white/50 backdrop-blur-sm sticky top-0 z-50' : 'py-10 px-4'}`}>
-    <h1 className={`${compact ? 'text-xl' : 'text-3xl md:text-5xl'} font-bold text-gray-800 tracking-wider font-serif`}>
+  <header className={`text-center transition-all duration-300 ${compact ? 'py-3 px-4 border-b border-stone-200 bg-white/50 backdrop-blur-sm sticky top-0 z-50' : 'py-6 px-4'}`}>
+    <h1 className={`${compact ? 'text-xl' : 'text-3xl md:text-4xl'} font-bold text-gray-800 tracking-wider font-serif`}>
       {compact ? '我的运势报告' : '命理择城'}
     </h1>
     {!compact && (
-      <p className="text-gray-500 font-normal text-sm mt-2 tracking-widest uppercase">
+      <p className="text-gray-500 font-normal text-xs mt-2 tracking-widest uppercase">
         FIND YOUR LUCKY CITY
       </p>
     )}
@@ -1021,34 +1021,34 @@ const App = () => {
 
   // Input View (Default)
   return (
-    <div className="min-h-screen bg-stone-50 pb-20">
+    <div className="min-h-screen bg-stone-50 pb-10">
       <div className="max-w-xl mx-auto px-4">
         <Header />
 
-        <div className="bg-white p-6 md:p-8 rounded-2xl shadow-xl border border-stone-100 mb-10 mx-auto mt-6 relative overflow-hidden">
+        <div className="bg-white p-5 md:p-6 rounded-2xl shadow-xl border border-stone-100 mb-6 mx-auto mt-2 relative overflow-hidden">
           {/* Decorative Elements */}
           <div className="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-bl-full -z-0 opacity-50"></div>
 
-          <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
+          <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
             
-            <div className="space-y-2">
+            <div className="space-y-1.5">
                 <label className="text-gray-800 font-bold block text-sm ml-1">出生时间</label>
                 <IOSDatePicker onChange={handleDateChange} />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
                 <label className="text-gray-800 font-bold block text-sm ml-1">出生地点</label>
                 <CityPicker onChange={handleCityChange} />
             </div>
             
             <button
               type="submit"
-              className="w-full py-4 rounded-xl text-white font-bold text-lg tracking-wider shadow-lg shadow-red-900/20 transition-all transform hover:-translate-y-1 bg-gradient-to-r from-red-800 to-red-900 mt-4"
+              className="w-full py-3.5 rounded-xl text-white font-bold text-lg tracking-wider shadow-lg shadow-red-900/20 transition-all transform hover:-translate-y-1 bg-gradient-to-r from-red-800 to-red-900 mt-2"
             >
                 查看我的专属报告
             </button>
             
-            <p className="text-center text-[10px] text-gray-400 mt-4">
+            <p className="text-center text-[10px] text-gray-400 mt-3">
                 已有 12,403 人找到天命之城
             </p>
           </form>
