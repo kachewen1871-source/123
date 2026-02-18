@@ -1,12 +1,25 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Removing 'runtime: edge' to use default Node.js runtime for better compatibility
 export const config = {
-  maxDuration: 60, // Allow up to 60 seconds for generation
+  maxDuration: 60,
 };
 
 export default async function handler(req, res) {
-  // Vercel serverless function (Node.js) handling
+  // Set CORS headers to allow requests from any origin (or strict it to your domain)
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  // Handle OPTIONS request for preflight
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
@@ -16,8 +29,8 @@ export default async function handler(req, res) {
     const apiKey = process.env.API_KEY;
 
     if (!apiKey) {
-      console.error("API Key is missing in server environment");
-      return res.status(500).json({ error: 'Server configuration error: API Key missing' });
+      console.error("API Key is missing");
+      return res.status(500).json({ error: 'Server Config Error: API Key Missing' });
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -101,10 +114,17 @@ export default async function handler(req, res) {
       },
     });
 
-    return res.status(200).json(JSON.parse(response.text));
+    // Handle potential raw text that might contain markdown block
+    let jsonString = response.text;
+    if (jsonString.startsWith("```json")) {
+        jsonString = jsonString.replace(/^```json\n/, "").replace(/\n```$/, "");
+    }
+
+    return res.status(200).json(JSON.parse(jsonString));
 
   } catch (error) {
     console.error("API Error:", error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    // Return explicit JSON error so frontend displays the error message instead of failing to parse
+    return res.status(500).json({ error: "服务器正忙，请稍后重试 (" + (error.message || "Unknown") + ")" });
   }
 }
