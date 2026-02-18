@@ -1,22 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createRoot } from "react-dom/client";
-import { GoogleGenAI, Type } from "@google/genai";
 import html2canvas from "html2canvas";
-
-// --- Helper: Get API Key Safely ---
-const getApiKey = () => {
-    // 1. Try Vite env (Standard for Vercel/Netlify deployments)
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
-        // @ts-ignore
-        return import.meta.env.VITE_API_KEY;
-    }
-    // 2. Try Node process.env (Fallback for some dev environments)
-    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-        return process.env.API_KEY;
-    }
-    return "";
-};
 
 // --- Types ---
 
@@ -924,105 +908,33 @@ const App = () => {
     setGeneratedImage(null);
 
     try {
-      const apiKey = getApiKey();
-      if (!apiKey) {
-        throw new Error("API Key 未配置。请检查环境变量。");
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-
-      const prompt = `
-        你是一个面向大众的娱乐向命理应用后台。
-        根据用户输入（${formData.birthDate} ${formData.birthTime} 出生于 ${formData.birthPlace}），生成一个通俗易懂、带有商业娱乐性质的运势报告。
-        
-        要求：
-        1. **Profile**: 将命理术语转化为直白的“人设标签”。例如，不要只说“弱火”，要说“温暖的烛光”。
-        2. **Advice**: 提供一句简短有力的转运建议（少于20字）。
-        3. **Recommendations**: 推荐3个适合发展的中国城市。
-           - **Reason**: 极其精简，直击痛点（搞钱、恋爱、健康），少于30字。
-           - **Tags**: 2个核心亮点标签，例如["搞钱圣地", "桃花旺"]。
-        
-        请严格按照 JSON 格式返回结果。
-      `;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              bazi: {
-                type: Type.OBJECT,
-                properties: {
-                  year: { type: Type.STRING },
-                  month: { type: Type.STRING },
-                  day: { type: Type.STRING },
-                  hour: { type: Type.STRING },
-                },
-                required: ["year", "month", "day", "hour"],
-              },
-              profile: {
-                type: Type.OBJECT,
-                properties: {
-                  wuxing: { type: Type.STRING, description: "五行属性 (金木水火土)" },
-                  archetype: { type: Type.STRING, description: "五行意象/人设名称 (如：长流水)" },
-                  keywords: { type: Type.STRING, description: "2-3个性格关键词" },
-                  luckyColor: { type: Type.STRING, description: "幸运颜色" },
-                  luckyNumber: { type: Type.STRING, description: "幸运数字" },
-                  luckyDirection: { type: Type.STRING, description: "幸运方位" },
-                  advice: { type: Type.STRING, description: "一句话开运建议" },
-                },
-                required: ["wuxing", "archetype", "keywords", "luckyColor", "luckyNumber", "luckyDirection", "advice"],
-              },
-              recommendations: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    city: { type: Type.STRING },
-                    province: { type: Type.STRING },
-                    tags: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    reason: { type: Type.STRING, description: "简短推荐理由" },
-                    score: { type: Type.NUMBER },
-                    distance: { type: Type.NUMBER },
-                    dimensions: {
-                      type: Type.OBJECT,
-                      properties: {
-                        career: { type: Type.NUMBER },
-                        wealth: { type: Type.NUMBER },
-                        relationship: { type: Type.NUMBER },
-                        health: { type: Type.NUMBER },
-                        environment: { type: Type.NUMBER },
-                      },
-                      required: ["career", "wealth", "relationship", "health", "environment"]
-                    }
-                  },
-                  required: ["city", "province", "tags", "reason", "score", "distance", "dimensions"],
-                },
-              },
-            },
-            required: ["bazi", "profile", "recommendations"],
-          },
+      // Call the Serverless Function instead of the direct Google API
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
         },
+        body: JSON.stringify(formData),
       });
 
-      if (response.text) {
-        const parsed = JSON.parse(response.text) as BaziResult;
-        
-        if (parsed.recommendations) {
-            parsed.recommendations.sort((a, b) => b.score - a.score); // Commercial: Show highest score first
-        }
-
-        setResult(parsed);
-        setView('result');
-      } else {
-        throw new Error("未返回分析结果，请重试。");
+      if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "请求失败，请稍后重试");
       }
+
+      const parsed = await response.json();
+      
+      if (parsed.recommendations) {
+          parsed.recommendations.sort((a: any, b: any) => b.score - a.score); // Commercial: Show highest score first
+      }
+
+      setResult(parsed as BaziResult);
+      setView('result');
+
     } catch (err: any) {
       setError(err.message || "推算过程中发生了错误，请稍后再试。");
       setView('input');
+      setToast({ show: true, message: err.message || "服务繁忙，请重试" });
     }
   };
 
