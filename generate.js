@@ -1,52 +1,55 @@
+
 export const config = {
-  maxDuration: 60,
+  runtime: 'edge', // 切换到 Edge Runtime，更稳定且原生支持 fetch
 };
 
-export default async function handler(req, res) {
-  // --- CORS Setup ---
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+export default async function handler(request) {
+  // --- CORS Headers ---
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Api-Version',
+  };
 
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+  // 处理预检请求 (OPTIONS)
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+  // 只允许 POST
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {
-    console.log("Request Body:", JSON.stringify(req.body));
-    const { birthDate, birthTime, birthPlace } = req.body;
+    // 解析请求体 (Edge Runtime 使用 request.json())
+    const body = await request.json();
+    const { birthDate, birthTime, birthPlace } = body;
+    console.log("Processing request for:", birthPlace);
 
     // --- Configuration ---
     const apiKey = process.env.API_KEY;
-    // 获取用户配置的中转地址 (Base URL)
-    let apiBaseUrl = process.env.API_BASE_URL; 
+    let apiBaseUrl = process.env.API_BASE_URL;
 
     if (!apiKey) {
-      return res.status(500).json({ 
-        error: '配置错误: 缺少 API_KEY。请在 Vercel 环境变量中添加。' 
+      return new Response(JSON.stringify({ error: '配置错误: 缺少 API_KEY' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // 默认回退地址
+    // 处理 Base URL
     if (!apiBaseUrl) {
-        apiBaseUrl = "https://api.openai.com/v1";
+      apiBaseUrl = "https://api.openai.com/v1";
     }
-
-    // 移除末尾斜杠，并确保包含 /v1 (如果用户只填了域名)
+    // 移除末尾斜杠
     apiBaseUrl = apiBaseUrl.replace(/\/$/, "");
+    // 智能补全 /v1
     if (!apiBaseUrl.endsWith("/v1")) {
-        // 智能补全: 如果用户填的是 https://2api.novai.su 但没加 v1，我们帮他加上
-        // 但如果已经是完整的路径就不加
-        apiBaseUrl = `${apiBaseUrl}/v1`;
+      apiBaseUrl = `${apiBaseUrl}/v1`;
     }
 
     const systemPrompt = `
@@ -92,8 +95,7 @@ export default async function handler(req, res) {
     }
     `;
 
-    // --- Fetch Call ---
-    // 优先使用 gemini-1.5-pro，Nova AI 通常支持。
+    // --- External API Call ---
     const payload = {
       model: "gemini-1.5-pro", 
       messages: [
@@ -104,9 +106,9 @@ export default async function handler(req, res) {
       temperature: 0.7
     };
 
-    console.log(`Calling API: ${apiBaseUrl}/chat/completions`);
+    console.log(`Sending request to: ${apiBaseUrl}/chat/completions`);
 
-    const response = await fetch(`${apiBaseUrl}/chat/completions`, {
+    const apiResponse = await fetch(`${apiBaseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -115,38 +117,47 @@ export default async function handler(req, res) {
       body: JSON.stringify(payload)
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
+    if (!apiResponse.ok) {
+      const errorText = await apiResponse.text();
       console.error("Provider Error:", errorText);
-      
-      let userMessage = `API 请求失败 (${response.status})`;
-      if (response.status === 404) userMessage += ": 接口路径错误，请检查 API_BASE_URL 是否正确 (应以 /v1 结尾)。";
-      if (response.status === 401) userMessage += ": API Key 无效或余额不足，请检查 Nova AI 控制台。";
-      if (response.status === 429) userMessage += ": 请求过于频繁或额度耗尽。";
-      
-      throw new Error(userMessage);
+      return new Response(JSON.stringify({ 
+        error: `服务商请求失败 (${apiResponse.status})。请检查 API_BASE_URL 和 Key。` 
+      }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const data = await response.json();
-    
+    const data = await apiResponse.json();
+
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        console.error("Invalid Response Structure:", JSON.stringify(data));
-        throw new Error("服务商返回数据格式异常，请稍后重试");
+       return new Response(JSON.stringify({ error: "服务商返回数据格式异常" }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     let content = data.choices[0].message.content;
     content = content.replace(/```json/g, "").replace(/```/g, "").trim();
 
     try {
-        const result = JSON.parse(content);
-        return res.status(200).json(result);
+      const result = JSON.parse(content);
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     } catch (parseError) {
-        console.error("JSON Parse Error:", content);
-        throw new Error("AI 生成的数据无法解析，请重试");
+      return new Response(JSON.stringify({ error: "AI 生成的数据无法解析为 JSON" }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
   } catch (error) {
-    console.error("Handler Error:", error);
-    return res.status(500).json({ error: error.message || "服务器内部错误" });
+    console.error("Edge Handler Error:", error);
+    return new Response(JSON.stringify({ error: error.message || "服务器内部错误" }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 }
