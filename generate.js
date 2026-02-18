@@ -1,26 +1,23 @@
 import { GoogleGenAI } from "@google/genai";
 
+// Removing 'runtime: edge' to use default Node.js runtime for better compatibility
 export const config = {
-  runtime: 'edge',
+  maxDuration: 60, // Allow up to 60 seconds for generation
 };
 
-export default async function handler(req) {
+export default async function handler(req, res) {
+  // Vercel serverless function (Node.js) handling
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
-    const { birthDate, birthTime, birthPlace } = await req.json();
+    const { birthDate, birthTime, birthPlace } = req.body;
     const apiKey = process.env.API_KEY;
 
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'Server configuration error: API Key missing' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      console.error("API Key is missing in server environment");
+      return res.status(500).json({ error: 'Server configuration error: API Key missing' });
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -39,7 +36,6 @@ export default async function handler(req) {
         请严格按照 JSON 格式返回结果。
       `;
 
-    // Schema definition matches the frontend expectation
     const responseSchema = {
         type: 'OBJECT',
         properties: {
@@ -105,16 +101,10 @@ export default async function handler(req) {
       },
     });
 
-    return new Response(response.text, {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(200).json(JSON.parse(response.text));
 
   } catch (error) {
     console.error("API Error:", error);
-    return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }
