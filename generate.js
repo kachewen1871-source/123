@@ -28,26 +28,27 @@ export default async function handler(req, res) {
     // --- Configuration ---
     const apiKey = process.env.API_KEY;
     // 获取用户配置的中转地址 (Base URL)
-    // 例如: https://api.nova-ai.com/v1
     let apiBaseUrl = process.env.API_BASE_URL; 
 
     if (!apiKey) {
       return res.status(500).json({ 
-        error: '配置错误: 缺少 API_KEY。请在 Vercel 环境变量中添加您的令牌 (sk-...)。' 
+        error: '配置错误: 缺少 API_KEY。请在 Vercel 环境变量中添加。' 
       });
     }
 
-    // 如果用户使用了 sk- 开头的 Key 但没配置 Base URL，给一个默认值或报错
-    // 这里为了兼容性，默认指向 OpenAI，但如果通过中转商，用户必须手动配置 API_BASE_URL
+    // 默认回退地址
     if (!apiBaseUrl) {
         apiBaseUrl = "https://api.openai.com/v1";
     }
 
-    // 移除末尾斜杠，防止拼接出错
+    // 移除末尾斜杠，并确保包含 /v1 (如果用户只填了域名)
     apiBaseUrl = apiBaseUrl.replace(/\/$/, "");
+    if (!apiBaseUrl.endsWith("/v1")) {
+        // 智能补全: 如果用户填的是 https://2api.novai.su 但没加 v1，我们帮他加上
+        // 但如果已经是完整的路径就不加
+        apiBaseUrl = `${apiBaseUrl}/v1`;
+    }
 
-    // --- System Prompt with Embedded Schema ---
-    // 由于中转商对 structured output 支持不一，我们在 Prompt 里强制要求 JSON 格式
     const systemPrompt = `
     你是一个精通《三命通会》与《穷通宝鉴》的玄学大师，同时也是一位熟悉中国城市地理的数据分析师。
     请根据用户的八字信息（${birthDate} ${birthTime} 出生于 ${birthPlace}），推算其命理格局，并推荐最适合其发展的中国城市。
@@ -91,19 +92,19 @@ export default async function handler(req, res) {
     }
     `;
 
-    // --- Fetch Call (OpenAI Compatible Interface) ---
-    // 大多数中转商支持 gemini-1.5-pro 映射，如果报错请尝试改名为 gpt-4o
+    // --- Fetch Call ---
+    // 优先使用 gemini-1.5-pro，Nova AI 通常支持。
     const payload = {
       model: "gemini-1.5-pro", 
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: "请为我批算八字，并推荐转运城市。" }
       ],
-      response_format: { type: "json_object" }, // 强制 JSON 模式
+      response_format: { type: "json_object" }, 
       temperature: 0.7
     };
 
-    console.log(`Calling API: ${apiBaseUrl}/chat/completions with model ${payload.model}`);
+    console.log(`Calling API: ${apiBaseUrl}/chat/completions`);
 
     const response = await fetch(`${apiBaseUrl}/chat/completions`, {
       method: "POST",
@@ -118,23 +119,22 @@ export default async function handler(req, res) {
       const errorText = await response.text();
       console.error("Provider Error:", errorText);
       
-      let userMessage = `服务商返回错误 (${response.status})`;
-      if (response.status === 404) userMessage += ": 接口地址错误，请检查 Vercel 的 API_BASE_URL 是否填写正确 (例如 https://api.nova-ai.com/v1)。";
-      if (response.status === 401) userMessage += ": API Key 无效或过期。";
+      let userMessage = `API 请求失败 (${response.status})`;
+      if (response.status === 404) userMessage += ": 接口路径错误，请检查 API_BASE_URL 是否正确 (应以 /v1 结尾)。";
+      if (response.status === 401) userMessage += ": API Key 无效或余额不足，请检查 Nova AI 控制台。";
+      if (response.status === 429) userMessage += ": 请求过于频繁或额度耗尽。";
       
       throw new Error(userMessage);
     }
 
     const data = await response.json();
     
-    // 安全检查
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        throw new Error("服务商返回的数据格式异常，未找到 choices 字段");
+        console.error("Invalid Response Structure:", JSON.stringify(data));
+        throw new Error("服务商返回数据格式异常，请稍后重试");
     }
 
     let content = data.choices[0].message.content;
-    
-    // 清理可能存在的 Markdown 包裹
     content = content.replace(/```json/g, "").replace(/```/g, "").trim();
 
     try {
@@ -142,7 +142,7 @@ export default async function handler(req, res) {
         return res.status(200).json(result);
     } catch (parseError) {
         console.error("JSON Parse Error:", content);
-        throw new Error("生成的数据格式有误，请重试");
+        throw new Error("AI 生成的数据无法解析，请重试");
     }
 
   } catch (error) {
