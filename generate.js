@@ -1,12 +1,13 @@
 
+import { GoogleGenAI, Type } from "@google/genai";
+
 export const config = {
-  runtime: 'nodejs', // 明确指定使用 Node.js 运行时 (比 Edge 更稳定，兼容性更好)
-  maxDuration: 60,   // 设置超时时间
+  runtime: 'nodejs',
+  maxDuration: 60,
 };
 
-// 在 "type": "module" 模式下，Vercel 期望默认导出是一个接收 Request 对象并返回 Response 对象的函数
 export default async function handler(request) {
-  // --- 1. 处理 CORS (Web API 方式) ---
+  // --- 1. 处理 CORS ---
   const corsHeaders = {
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Allow-Origin': '*',
@@ -14,12 +15,10 @@ export default async function handler(request) {
     'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   };
 
-  // 处理预检请求 (OPTIONS)
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  // 只允许 POST
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
       status: 405, 
@@ -28,8 +27,7 @@ export default async function handler(request) {
   }
 
   try {
-    // --- 2. 解析请求体 (Web API 方式) ---
-    // 必须使用 await request.json() 而不是 req.body
+    // --- 2. 解析请求体 ---
     const body = await request.json().catch(() => ({})); 
     const { birthDate, birthTime, birthPlace } = body;
 
@@ -42,10 +40,9 @@ export default async function handler(request) {
        });
     }
 
-    // --- 3. 配置检查 ---
+    // --- 3. 初始化 Google GenAI ---
+    // 务必确保 Vercel 环境变量中 API_KEY 是有效的 Google AI Studio Key
     const apiKey = process.env.API_KEY;
-    let apiBaseUrl = process.env.API_BASE_URL;
-
     if (!apiKey) {
       console.error("Server Error: Missing API_KEY");
       return new Response(JSON.stringify({ error: '配置错误: 服务器缺少 API_KEY' }), {
@@ -54,119 +51,108 @@ export default async function handler(request) {
       });
     }
 
-    // 默认回退地址
-    if (!apiBaseUrl) apiBaseUrl = "https://api.openai.com/v1";
-    // URL 清理
-    apiBaseUrl = apiBaseUrl.replace(/\/$/, "");
-    if (!apiBaseUrl.endsWith("/v1")) apiBaseUrl = `${apiBaseUrl}/v1`;
+    const ai = new GoogleGenAI({ apiKey });
 
-    const systemPrompt = `
-    你是一个精通《三命通会》与《穷通宝鉴》的玄学大师，同时也是一位熟悉中国城市地理的数据分析师。
-    请根据用户的八字信息（${birthDate} ${birthTime} 出生于 ${birthPlace}），推算其命理格局，并推荐最适合其发展的中国城市。
+    // --- 4. 定义 Schema 和 Prompt ---
+    const systemInstruction = `你是一个精通《三命通会》与《穷通宝鉴》的玄学大师，同时也是一位熟悉中国城市地理的数据分析师。
+请根据用户的八字信息，推算其命理格局，并推荐最适合其发展的中国城市。`;
 
-    请严格按照下方的 JSON 格式输出结果，不要输出任何 Markdown 标记（如 \`\`\`json）：
+    const userPrompt = `用户八字信息：${birthDate} ${birthTime} 出生于 ${birthPlace}。
+请分析命理喜用神，并推荐3个适合发展的中国城市。
+请严格按照 JSON 格式返回。`;
 
-    {
-      "bazi": {
-        "year": "甲子 (年份干支)",
-        "month": "丙寅 (月份干支)",
-        "day": "戊辰 (日期干支)",
-        "hour": "壬戌 (时辰干支)"
+    // 使用官方 SDK 的 Structured Output 功能
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash', // 推荐使用 Flash 模型，速度快且 JSON 能力强
+      contents: userPrompt,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.7,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            bazi: {
+              type: Type.OBJECT,
+              properties: {
+                year: { type: Type.STRING, description: "年柱 (e.g. 甲子)" },
+                month: { type: Type.STRING, description: "月柱" },
+                day: { type: Type.STRING, description: "日柱" },
+                hour: { type: Type.STRING, description: "时柱" },
+              },
+            },
+            profile: {
+              type: Type.OBJECT,
+              properties: {
+                wuxing: { type: Type.STRING, description: "核心五行 (e.g. 火)" },
+                archetype: { type: Type.STRING, description: "五行意象 (e.g. 山头火·璀璨)" },
+                keywords: { type: Type.STRING, description: "2-3个性格关键词，用斜杠分隔" },
+                luckyColor: { type: Type.STRING },
+                luckyNumber: { type: Type.STRING },
+                luckyDirection: { type: Type.STRING },
+                advice: { type: Type.STRING, description: "一句简短有力的开运建议 (少于20字)" },
+              },
+            },
+            recommendations: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  city: { type: Type.STRING },
+                  province: { type: Type.STRING },
+                  tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  reason: { type: Type.STRING, description: "推荐理由 (少于30字)" },
+                  score: { type: Type.NUMBER, description: "契合度 0-100" },
+                  distance: { type: Type.NUMBER, description: "距离出生地的大致公里数" },
+                  dimensions: {
+                    type: Type.OBJECT,
+                    properties: {
+                        career: { type: Type.NUMBER },
+                        wealth: { type: Type.NUMBER },
+                        relationship: { type: Type.NUMBER },
+                        health: { type: Type.NUMBER },
+                        environment: { type: Type.NUMBER },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
-      "profile": {
-        "wuxing": "核心五行 (如：火)",
-        "archetype": "五行意象 (如：山头火·璀璨)",
-        "keywords": "2-3个性格关键词 (如：天生领袖 / 财运亨通)",
-        "luckyColor": "幸运色 (如：赤红)",
-        "luckyNumber": "幸运数字 (如：9)",
-        "luckyDirection": "幸运方位 (如：正南)",
-        "advice": "一句简短有力的开运建议 (少于20字)"
-      },
-      "recommendations": [
-         {
-            "city": "城市名 (如：深圳)",
-            "province": "省份 (如：广东)",
-            "tags": ["标签1", "标签2"],
-            "reason": "极其精简的推荐理由，直击痛点 (少于30字)",
-            "score": 95 (0-100的契合度),
-            "distance": 1200 (距离出生地的大致公里数),
-            "dimensions": { 
-                "career": 90, 
-                "wealth": 90, 
-                "relationship": 80, 
-                "health": 80, 
-                "environment": 80 
-            }
-         }
-         // 请提供总共 3 个推荐城市
-      ]
-    }
-    `;
-
-    // --- 4. 调用外部 API ---
-    const payload = {
-      model: "gemini-1.5-pro", 
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: "请为我批算八字，并推荐转运城市。" }
-      ],
-      response_format: { type: "json_object" }, 
-      temperature: 0.7
-    };
-
-    console.log(`Sending request to: ${apiBaseUrl}/chat/completions`);
-
-    const apiResponse = await fetch(`${apiBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(payload)
     });
 
-    if (!apiResponse.ok) {
-      const errorText = await apiResponse.text();
-      console.error(`Provider Error (${apiResponse.status}):`, errorText);
-      
-      return new Response(JSON.stringify({ 
-        error: `上游服务报错 (${apiResponse.status})。请检查 Key 或 URL。` 
-      }), {
-        status: 502,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const data = await apiResponse.json();
+    // --- 5. 处理响应 ---
+    // SDK 的 response.text 直接返回生成的 JSON 字符串
+    const jsonString = response.text;
     
-    // 检查数据结构
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        return new Response(JSON.stringify({ error: "上游服务返回的数据格式异常" }), {
-            status: 502,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-    }
-
-    let content = data.choices[0].message.content;
-    content = content.replace(/```json/g, "").replace(/```/g, "").trim();
-
+    // 双重保险：虽然配置了 JSON 模式，但为了防止意外，还是做一次 parse 检查
+    let resultData;
     try {
-        const result = JSON.parse(content);
-        return new Response(JSON.stringify(result), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-    } catch (parseError) {
-        console.error("JSON Parse Error:", parseError);
-        return new Response(JSON.stringify({ error: "AI 生成内容无法解析为 JSON" }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        resultData = JSON.parse(jsonString);
+    } catch (e) {
+        // 如果偶尔包含了 Markdown 代码块，进行清理
+        const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
+        resultData = JSON.parse(cleanJson);
     }
+
+    return new Response(JSON.stringify(resultData), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
 
   } catch (error) {
-    console.error("Handler Fatal Error:", error);
-    return new Response(JSON.stringify({ error: error.message || "服务器内部未知错误" }), {
+    console.error("Gemini API Error:", error);
+    
+    // 友好的错误提示
+    let errorMessage = "服务器内部错误";
+    if (error.message && error.message.includes("API_KEY")) {
+        errorMessage = "API Key 无效或未配置";
+    } else if (error.status) {
+        errorMessage = `Google API 报错: ${error.status}`;
+    }
+
+    return new Response(JSON.stringify({ error: errorMessage, details: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
